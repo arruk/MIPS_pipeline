@@ -1,12 +1,15 @@
 `timescale 1ns/1ps
 
+`include "pipeline2.sv"
 `include "pipeline.sv"
 
 module tbpp;
 
-    reg  clk, reset, stopf;
+    reg  clk, reset, stopf, stopf2;
 
     pipeline dut(clk, reset, stopf);
+
+    pipeline2 dut2(clk, reset, stopf2);
 
     integer i;
 
