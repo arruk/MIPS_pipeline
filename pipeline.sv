@@ -1,12 +1,12 @@
-module pipeline2 (clk, reset, halt);
-    input  clk, reset; output halt;
+module pipeline (clk, reset, stopf);
+    input  clk, reset; output stopf;
 
-/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+  /********************************************************************/
 
     logic [31:0] ROM [0:31]; 
     logic [31:0] RAM [0:31];     
 
-/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+  /********************************************************************/
 
     function isRType;  input [31:0] I; isRType  = !(|I[31:26]);                                     endfunction
     function isJR;     input [31:0] I; isJR     = (isRType(I) && I[5:0] == 6'b001000);              endfunction
@@ -51,50 +51,28 @@ module pipeline2 (clk, reset, halt);
         Jimm = {I[25:0], 2'b00};
     endfunction
 
-    function writesRD; input [31:0] I; writesRD = isALUreg(I);             endfunction
-    function writesRT; input [31:0] I; writesRT = isALUimm(I) | isLoad(I); endfunction
-
-    function readsRT;  input [31:0] I; readsRT = !(isJR(I) | isJ(I) | isJAL(I) | isALUimm(I) | isALUimm(I));                  endfunction
-    function readsRS;  input [31:0] I; readsRS = !(((funct(I)==6'b0 | funct(I) ==6'b000010) & isRType(I)) | isJ(I) | isJAL(I)) ; endfunction
+  /********************************************************************/
+    localparam F_bit=0; localparam F_state = 1 << F_bit;
+    localparam D_bit=1; localparam D_state = 1 << D_bit;
+    localparam E_bit=2; localparam E_state = 1 << E_bit;
+    localparam M_bit=3; localparam M_state = 1 << M_bit;
+    localparam W_bit=4; localparam W_state = 1 << W_bit;
     
-/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    reg [4:0] state;
 
-    assign halt = !reset & isEND(MW_instr);
+    always@(posedge clk) begin
+        if(reset) begin
+            state <= F_state;
+        end else begin
+            state <= {state[3:0], state[4]};
+            if(stopf) begin
+                //$writememh("regsFI.dat", registerfile);
+                //$writememb("RAMa.dat", RAM);
+            end
+        end
+    end
 
-    wire D_flush;
-    wire E_flush;
-
-    wire F_stall;
-    wire D_stall;
-
-    wire rtHazard = !FD_nop & readsRT(FD_instr) & (rtID(FD_instr)!=0) & (
-                (writesRD(DE_instr) & rtID(FD_instr) == rdID(DE_instr)) |
-                (writesRD(EM_instr) & rtID(FD_instr) == rdID(EM_instr)) |
-                (writesRD(MW_instr) & rtID(FD_instr) == rdID(MW_instr)) |
-                (writesRT(DE_instr) & rtID(FD_instr) == rtID(DE_instr)) |
-                (writesRT(EM_instr) & rtID(FD_instr) == rtID(EM_instr)) |
-                (writesRT(MW_instr) & rtID(FD_instr) == rtID(MW_instr)) );
-
-    wire rsHazard = !FD_nop & readsRS(FD_instr) & (rsID(FD_instr)!=0) & (
-                (writesRD(DE_instr) & rsID(FD_instr) == rdID(DE_instr)) |
-                (writesRD(EM_instr) & rsID(FD_instr) == rdID(EM_instr)) |
-                (writesRD(MW_instr) & rsID(FD_instr) == rdID(MW_instr)) |
-                (writesRT(DE_instr) & rsID(FD_instr) == rtID(DE_instr)) |
-                (writesRT(EM_instr) & rsID(FD_instr) == rtID(EM_instr)) |
-                (writesRT(MW_instr) & rsID(FD_instr) == rtID(MW_instr)) );          
-
-    wire dataHazard = rsHazard | rtHazard;      
-
-    assign F_stall = dataHazard;
-    assign D_stall = dataHazard;
-
-    assign D_flush = E_jumpORbranch;
-    assign E_flush = E_jumpORbranch | dataHazard;
-
-/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-    localparam NOP = 32'b00000000000000000000000000100000;
-
+  /********************************************************************/
 
     reg [31:0] F_PC;
 
@@ -106,32 +84,23 @@ module pipeline2 (clk, reset, halt);
     end
 
     always@(posedge clk) begin
-
-        if(!F_stall) begin
+        if(reset)begin
+            F_PC <=0;
+        end else if(state[F_bit]) begin
             FD_instr <= ROM[F_PC[31:2]];
             FD_PC    <= F_PC;
             F_PC     <= F_PC+4;
+        end else if(state[M_bit] & jumpORbranch) begin
+            F_PC     <= jumpORbranchADDR;
         end
-
-        if(jumpORbranch) begin
-            F_PC <= jumpORbranchADDR;
-        end
-
-        FD_nop <= D_flush | reset;
-
-        if(reset)begin
-            F_PC <= 0;
-        end 
-
     end
     
-/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+  /********************************************************************/
 
     reg [31:0] FD_instr;
     reg [31:0] FD_PC;
-    reg        FD_nop;
 
-/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+  /********************************************************************/
 
     wire        wbEnable;
     wire [31:0] wbData;
@@ -140,15 +109,12 @@ module pipeline2 (clk, reset, halt);
     reg [31:0] registerfile [0:31];
 
     always@(posedge clk) begin
-        if(!D_stall) begin
+        if(state[D_bit]) begin
             DE_PC    <= FD_PC;
-            DE_instr <= (FD_nop | E_flush) ? NOP : FD_instr;  
+            DE_instr <= FD_instr;
+            DE_rs    <= registerfile[rsID(FD_instr)];
+            DE_rt    <= registerfile[rtID(FD_instr)]; 
         end
-
-        if(E_flush) DE_instr <= NOP;
-
-        DE_rs    <= registerfile[rsID(FD_instr)];
-        DE_rt    <= registerfile[rtID(FD_instr)]; 
     end
 
     always@(posedge clk) begin
@@ -157,15 +123,14 @@ module pipeline2 (clk, reset, halt);
         end
     end
 
-/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+  /********************************************************************/
 
     reg [31:0] DE_instr;
     reg [31:0] DE_PC;
     reg [31:0] DE_rs;
     reg [31:0] DE_rt;
     
-/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
+  /********************************************************************/
     wire [7:0] E_aluop = aluop(DE_instr);
 
     wire [31:0] E_aluIN1 = DE_rs;
@@ -224,19 +189,19 @@ module pipeline2 (clk, reset, halt);
     wire [31:0] E_result = (isJ(DE_instr) | isJAL(DE_instr) | isJR(DE_instr)) ? DE_PC+4 : E_aluout;
 
     always@(posedge clk) begin
-        EM_PC      <= DE_PC;
-        EM_instr   <= DE_instr;
-        EM_rt      <= DE_rt;
-        EM_Eresult <= E_result;
-        EM_addr    <= DE_rs + Iimm(DE_instr) ;
+        if(state[E_bit])begin
+            EM_PC      <= DE_PC;
+            EM_instr   <= DE_instr;
+            EM_rt      <= DE_rt;
+            EM_Eresult <= E_result;
+            EM_addr    <= DE_rs + Iimm(DE_instr) ;
+        end
     end
 
     assign jumpORbranchADDR = E_jumpORbranchADDR;
     assign jumpORbranch = E_jumpORbranch;
 
-
-
-/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+  /********************************************************************/
 
     reg [31:0] EM_instr;
     reg [31:0] EM_PC;
@@ -244,7 +209,7 @@ module pipeline2 (clk, reset, halt);
     reg [31:0] EM_Eresult;
     reg [31:0] EM_addr;
 
-/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+  /********************************************************************/
 
     wire [31:0] M_store_data = EM_rt;
 
@@ -258,21 +223,23 @@ module pipeline2 (clk, reset, halt);
     end
 
     always@(posedge clk) begin
-        MW_PC      <= EM_PC;
-        MW_instr   <= EM_instr;
-        MW_Eresult <= EM_Eresult;
-        MW_add     <= EM_addr;
+        if(state[M_bit]) begin
+            MW_PC      <= EM_PC;
+            MW_instr   <= EM_instr;
+            MW_Eresult <= EM_Eresult;
+            MW_add     <= EM_addr;
+        end
     end
 
-/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+  /********************************************************************/
 
     reg [31:0] MW_instr;
     reg [31:0] MW_PC;
     reg [31:0] MW_Eresult;
-    reg [31:0] MW_add;
+    reg [31:0] MW_add;      
     reg [31:0] MW_Mdata;
 
-/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+  /********************************************************************/  
 
     wire [31:0] W_Mresult = MW_Mdata;
     
@@ -283,15 +250,11 @@ module pipeline2 (clk, reset, halt);
     assign wbRdID   = isJAL(MW_instr)    ? 5'd31          : 
                       isALUreg(MW_instr) ? rdID(MW_instr) :
                       rtID(MW_instr)                      ;
+                
+    assign stopf = isEND(MW_instr) & state == 4'b0001;
 
     initial begin
         registerfile[0] = 0;
     end
         
-    always@(*) begin
-        if(halt) begin
-            //$writememh("regs.dat", registerfile);
-            //$writememb("RAMa.dat", RAM);
-        end
-    end        
 endmodule

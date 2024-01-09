@@ -1,4 +1,4 @@
-module pipeline2 (clk, reset, halt);
+module pipeline3 (clk, reset, halt);
     input  clk, reset; output halt;
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -70,18 +70,14 @@ module pipeline2 (clk, reset, halt);
     wire rtHazard = !FD_nop & readsRT(FD_instr) & (rtID(FD_instr)!=0) & (
                 (writesRD(DE_instr) & rtID(FD_instr) == rdID(DE_instr)) |
                 (writesRD(EM_instr) & rtID(FD_instr) == rdID(EM_instr)) |
-                (writesRD(MW_instr) & rtID(FD_instr) == rdID(MW_instr)) |
                 (writesRT(DE_instr) & rtID(FD_instr) == rtID(DE_instr)) |
-                (writesRT(EM_instr) & rtID(FD_instr) == rtID(EM_instr)) |
-                (writesRT(MW_instr) & rtID(FD_instr) == rtID(MW_instr)) );
+                (writesRT(EM_instr) & rtID(FD_instr) == rtID(EM_instr)) );
 
     wire rsHazard = !FD_nop & readsRS(FD_instr) & (rsID(FD_instr)!=0) & (
                 (writesRD(DE_instr) & rsID(FD_instr) == rdID(DE_instr)) |
                 (writesRD(EM_instr) & rsID(FD_instr) == rdID(EM_instr)) |
-                (writesRD(MW_instr) & rsID(FD_instr) == rdID(MW_instr)) |
                 (writesRT(DE_instr) & rsID(FD_instr) == rtID(DE_instr)) |
-                (writesRT(EM_instr) & rsID(FD_instr) == rtID(EM_instr)) |
-                (writesRT(MW_instr) & rsID(FD_instr) == rtID(MW_instr)) );          
+                (writesRT(EM_instr) & rsID(FD_instr) == rtID(EM_instr)) );          
 
     wire dataHazard = rsHazard | rtHazard;      
 
@@ -147,8 +143,18 @@ module pipeline2 (clk, reset, halt);
 
         if(E_flush) DE_instr <= NOP;
 
-        DE_rs    <= registerfile[rsID(FD_instr)];
-        DE_rt    <= registerfile[rtID(FD_instr)]; 
+        // if(wbEnable & (( rdID(MW_instr) == rsID(FD_instr) & writesRD(MW_instr) )  |
+        //                ( rtID(MW_instr) == rsID(FD_instr) & writesRT(MW_instr) )) )
+        //     DE_rs <= wbData;
+        // else
+        //     DE_rs <= registerfile[rsID(FD_instr)];
+
+        // if(wbEnable & ((rdID(MW_instr) == rtID(FD_instr) & writesRD(MW_instr) )  | 
+        //                (rtID(MW_instr) == rtID(FD_instr) & writesRT(MW_instr) )) )
+        //     DE_rt <= wbData;
+        // else
+        //     DE_rt <= registerfile[rtID(FD_instr)];
+
     end
 
     always@(posedge clk) begin
@@ -161,8 +167,8 @@ module pipeline2 (clk, reset, halt);
 
     reg [31:0] DE_instr;
     reg [31:0] DE_PC;
-    reg [31:0] DE_rs;
-    reg [31:0] DE_rt;
+    wire [31:0] DE_rs = registerfile[rsID(DE_instr)];
+    wire [31:0] DE_rt = registerfile[rtID(DE_instr)];
     
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
