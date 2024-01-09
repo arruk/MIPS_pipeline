@@ -1,1 +1,16 @@
-My pipeline MIPS project
+based on Bruno Levy's project "learn-fpga"(https://github.com/BrunoLevy/learn-fpga). adapted for MIPS architecture by lucas arruk.
+
+4 types of MIPS pipeline cores have been developed, which only support the following instructions:
+- SLL, SRL, JR, ADD, ADDI, SUB, AND, ANDI, OR, ORI, XOR, XORI, SLT, SLTI, J, JAL, BEQ, BNE, LW and SW.
+
+the first one is a sequential pipeline, more like a multicycle because of the state machine, but with 5 states and the pipeline registers, i.e. much closer to a real pipeline.
+
+pipeline2.sv is a complete pipeline, addressing the hazards with flushes and stalls, the most primitive way.
+
+pipeline3.sv changes the register file action, allowing to read and write to it in a single cycle.
+
+pipeline4.sv implements the register forwarding.
+
+
+
+A MOMENTARY LAPSE OF REASON.
